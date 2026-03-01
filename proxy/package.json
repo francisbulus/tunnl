@@ -14,7 +14,7 @@
   },
   "repository": "https://github.com/francisbulus/node-tunnel-server.git",
   "engines": {
-    "node": ">=14.0"
+    "node": ">=18.0"
   },
   "author": "“Francis <“notchera@gmail.com\nssh-keygen -t rsa -C “notchera@gmail.com>",
   "license": "MIT",
@@ -35,7 +35,6 @@
   "dependencies": {
     "body-parser": "^1.20.0",
     "cors": "^2.8.5",
-    "crypto": "^1.0.1",
     "dotenv": "^16.0.0",
     "esm": "^3.2.25",
     "express": "^4.17.3",
