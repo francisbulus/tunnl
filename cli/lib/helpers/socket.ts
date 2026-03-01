@@ -6,26 +6,46 @@ import Outbound from "../streams/outbound";
 import { DefaultEventsMap } from "@socket.io/component-emitter";
 
 let socket: Socket<DefaultEventsMap>;
+let heartbeatInterval: NodeJS.Timeout | undefined;
+
+function buildAccessUrl(remoteUrl: string, room: string): string {
+  try {
+    const parsed = new URL(remoteUrl);
+    parsed.pathname = "/";
+    parsed.search = `?token=${encodeURIComponent(room)}`;
+    return parsed.toString();
+  } catch (err) {
+    return `/?token=${encodeURIComponent(room)}`;
+  }
+}
+
 export function persistConnection(): void {
-  setTimeout(() => {
+  if (heartbeatInterval) {
+    return;
+  }
+  heartbeatInterval = setInterval(() => {
     if (socket && socket.connected) {
       socket.send("ping");
     }
-    persistConnection();
   }, 5000);
 }
 
 export function connect(config: { [option: string]: any }): void {
-  socket = io(config.remote, {
+  const remote = config.remote;
+  socket = io(remote, {
     transports: ["websocket"],
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    timeout: 10000,
   });
 
   socket.on("connect", () => {
     const room = nanoid(5);
     socket.emit("join", room);
     if (socket.connected) {
+      const accessUrl = buildAccessUrl(remote, room);
       console.log(
-        `Send this code "${room}" to the client so they access at https://node-tunnel.herokuapp.com `
+        `Tunnel key: "${room}"\nAccess with header: Authorization: Bearer ${room}\nOr URL: ${accessUrl}`
       );
     }
   });
@@ -34,14 +54,22 @@ export function connect(config: { [option: string]: any }): void {
     console.error(e.message);
   });
 
-  socket.on("room-confirmation", (msg) => {
+  socket.on("room-confirmation", () => {
     console.log("Aye, we are game.");
   });
 
   socket.on("request", (id, req) => {
+    req.hostname = "127.0.0.1";
+    req.host = "127.0.0.1";
     req.port = config.port;
     const inbound = new Inbound(id, socket);
     const localServerReq = http.request(req);
+    localServerReq.setTimeout(
+      Number(process.env.TUNNEL_LOCAL_TIMEOUT_MS || "30000"),
+      () => {
+        localServerReq.destroy(new Error("Local server request timed out"));
+      }
+    );
     inbound.pipe(localServerReq);
     const handleLocalServerResponse = (res: {
       statusCode: any;

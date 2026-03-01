@@ -1,19 +1,33 @@
 import { handleResponse } from "../general-helpers/server";
 import { Res, Req, Socket } from "../types";
 
-export const handleBadRequestToSocket = (err: string, request: Req) => {
-  request.destroy(new Error(err));
+export const handleBadRequestToSocket = (
+  err: string | Error,
+  request: Req
+): void => {
+  if (typeof err === "string") {
+    request.destroy(new Error(err));
+    return;
+  }
+  request.destroy(err);
 };
 
-export const handleSocketError = (res: Res, socket: Socket) => {
-  res.off("close", () => {
-    socket.once("disonnect", handleSocketError);
-  });
-  res.end(500);
+export const handleSocketError = (res: Res, _socket: Socket): void => {
+  if (!res.headersSent) {
+    res.status(502);
+  }
+  res.end("Tunnel socket error");
 };
 
-export const handleRequestError = (res: Res, outbound: any) => {
+export const handleRequestError = (
+  res: Res,
+  outbound: any,
+  errorMessage?: string
+): void => {
   outbound.off("response", handleResponse);
   outbound.destroy();
-  res.end(502);
+  if (!res.headersSent) {
+    res.status(502);
+  }
+  res.end(errorMessage || "Upstream request failed");
 };

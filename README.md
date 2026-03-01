@@ -1,20 +1,43 @@
 ### How It Works
 
-**Note:** WIP
+`tunnl` is a lightweight reverse tunnel prototype split into two apps:
 
-The command line tool (i.e the client) is the first actor in the communication pipeline - the `tunnel -p TARGET_LOCAL_PORT_NUMBER_HERE` command initiates a socket connection between the proxy server and itself. A key will be generated upon establishing this connection which can be sent to any user to enter on the proxy server's home page (i.e the base endpoint of the deployed server), which will contain a form for the key input.
+- `proxy/`: public HTTP endpoint + Socket.IO broker
+- `cli/`: local tunnel agent that forwards requests to your local port
 
-If the local port the client is connected to has, say, a React app running on it, this will be piped to the user agent via the proxy.
+Run the CLI with:
 
-### A Few Things to Note
+`tunnel -p <local-port> --remote <proxy-url>`
 
-- This connection isn't channeled through a secure layer at the moment as it is, in its current state, for learning purposes and hyperlocalized use cases
+After connecting, the CLI prints a tunnel key. Remote callers can access your tunnel with either:
 
-- I'll keep working on abstracting it when I have the time so that it evolves into an implementation that doesn't require impermanent domains and a lot of config overhead but there's really no timeline around that. Like I said, this started off primarily as a tool for fun, learning, and personal needs
+- `Authorization: Bearer <key>`
+- `?token=<key>` on the URL
+
+The proxy uses that key to route each HTTP request to the correct connected tunnel socket.
+
+### Hardening Controls
+
+The proxy now includes basic production guards:
+
+- Keyed tunnel routing (no global fallback socket)
+- Request rate limiting (`RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX_REQUESTS`)
+- Max request payload guard (`MAX_REQUEST_BODY_BYTES`)
+- Request/response timeout guard (`REQUEST_TIMEOUT_MS`)
+- Hop-by-hop header stripping in both directions
+- Optional HTTPS/WSS enforcement (`ENFORCE_HTTPS=true`; defaults true in production)
+
+Optional subdomain routing is supported by setting:
+
+- `TUNNEL_BASE_DOMAIN` (for example `example.com`, enabling `<key>.example.com`)
+
+### Development
+
+- Proxy UI: `GET /connect`
+- Proxy health check: `GET /healthz`
+- Proxy integration tests: `cd proxy && npm test`
 
 ### References
-
-Architecture + idea inspired by:
 
 - [ngrok](https://github.com/inconshreveable/ngrok)
 - [web-tunnel](https://github.com/web-tunnel)

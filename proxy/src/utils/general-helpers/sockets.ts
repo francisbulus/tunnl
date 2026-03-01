@@ -1,62 +1,159 @@
 import { handleSocketConnectionError } from "../error-handlers/sockets.js";
-import proxyAddr from "proxy-addr";
-import { io } from "../../server.js";
 import { getToken } from "./server.js";
-import { StreamCallback, Socket } from "../types.js";
-import { Request, Response } from "express";
+import { Socket } from "../types.js";
+import { Request } from "express";
+import { Server } from "socket.io";
+import { DefaultEventsMap } from "socket.io/dist/typed-events";
+
+type IoServer = Server<DefaultEventsMap, DefaultEventsMap, DefaultEventsMap, any>;
+
+const roomToSocketId = new Map<string, string>();
+const socketIdToRoom = new Map<string, string>();
+
+const isHttpsEnforced = (): boolean => {
+  if (process.env.ENFORCE_HTTPS) {
+    return process.env.ENFORCE_HTTPS === "true";
+  }
+  return process.env.NODE_ENV === "production";
+};
+
+const isValidTunnelKey = (key: string): boolean => {
+  return /^[A-Za-z0-9_-]{4,64}$/.test(key);
+};
+
+const getTunnelKeyFromHost = (req: Request): string | null => {
+  const baseDomain = process.env.TUNNEL_BASE_DOMAIN;
+  if (!baseDomain) {
+    return null;
+  }
+  const hostHeader = req.headers.host;
+  if (!hostHeader) {
+    return null;
+  }
+
+  const host = hostHeader.split(":")[0].toLowerCase();
+  const normalizedBaseDomain = baseDomain.toLowerCase();
+  if (!host.endsWith(`.${normalizedBaseDomain}`)) {
+    return null;
+  }
+
+  const subdomain = host.slice(0, host.length - normalizedBaseDomain.length - 1);
+  if (!subdomain || subdomain.includes(".")) {
+    return null;
+  }
+
+  return subdomain;
+};
+
+export const resolveTunnelKey = (req: Request): string | null => {
+  const token = getToken(req);
+  if (typeof token === "string" && token.trim().length > 0) {
+    return token.trim();
+  }
+  const subdomainToken = getTunnelKeyFromHost(req);
+  if (subdomainToken && subdomainToken.trim().length > 0) {
+    return subdomainToken.trim();
+  }
+  return null;
+};
+
+export const registerSocketTunnel = (
+  io: IoServer,
+  socket: Socket,
+  room: string
+): { ok: boolean; room?: string; message?: string } => {
+  const roomKey = String(room || "").trim();
+  if (!isValidTunnelKey(roomKey)) {
+    return {
+      ok: false,
+      message:
+        "Invalid tunnel key. Expected 4-64 characters in [A-Za-z0-9_-].",
+    };
+  }
+
+  const existingSocketId = roomToSocketId.get(roomKey);
+  if (existingSocketId && existingSocketId !== socket.id) {
+    const existingSocket = io.sockets.sockets.get(existingSocketId);
+    if (existingSocket) {
+      existingSocket.disconnect(true);
+    }
+  }
+
+  roomToSocketId.set(roomKey, socket.id);
+  socketIdToRoom.set(socket.id, roomKey);
+  socket.join(roomKey);
+
+  return { ok: true, room: roomKey };
+};
+
+export const cleanupSocketTunnelRegistration = (socketId: string): void => {
+  const room = socketIdToRoom.get(socketId);
+  if (!room) {
+    return;
+  }
+  socketIdToRoom.delete(socketId);
+  if (roomToSocketId.get(room) === socketId) {
+    roomToSocketId.delete(room);
+  }
+};
+
+export const getSocketFromTunnelKey = (
+  io: IoServer,
+  tunnelKey: string
+): Socket | null => {
+  const socketId = roomToSocketId.get(tunnelKey);
+  if (!socketId) {
+    return null;
+  }
+  const socket = io.sockets.sockets.get(socketId) || null;
+  if (!socket || !socket.connected) {
+    cleanupSocketTunnelRegistration(socketId);
+    return null;
+  }
+  return socket;
+};
+
+export const shouldRejectInsecureRequest = (req: Request): boolean => {
+  if (!isHttpsEnforced()) {
+    return false;
+  }
+  const forwardedProtoHeader = req.headers["x-forwarded-proto"];
+  const forwardedProto = Array.isArray(forwardedProtoHeader)
+    ? forwardedProtoHeader[0]
+    : forwardedProtoHeader;
+  const normalizedForwardedProto = forwardedProto
+    ? forwardedProto.split(",")[0].trim()
+    : "";
+
+  return !(req.secure || normalizedForwardedProto === "https");
+};
+
+export const shouldRejectInsecureSocket = (socket: Socket): boolean => {
+  if (!isHttpsEnforced()) {
+    return false;
+  }
+
+  const forwardedProtoHeader = socket.handshake.headers["x-forwarded-proto"];
+  const forwardedProto = Array.isArray(forwardedProtoHeader)
+    ? forwardedProtoHeader[0]
+    : forwardedProtoHeader;
+  const normalizedForwardedProto = forwardedProto
+    ? forwardedProto.split(",")[0].trim()
+    : "";
+
+  return !(socket.handshake.secure || normalizedForwardedProto === "https");
+};
+
+export const resolveClientIdentifier = (req: Request): string => {
+  return req.ip || req.socket.remoteAddress || "unknown";
+};
 
 export const handlePing = (msg: string, socket: Socket): void => {
   if (msg !== "ping") return;
   socket.send("pong");
 };
 
-export const handleSocketClientDisconnect = async (
-  socket: Socket,
-  access: string
-) => {
+export const handleSocketClientDisconnect = (socket: Socket): void => {
   socket.off("error", handleSocketConnectionError);
   socket.off("message", handlePing);
 };
-
-export const checkConnection = () => {
-  console.log("");
-};
-
-// export const checkConnection = async (
-//   req: Request,
-//   res: Response,
-//   next: StreamCallback,
-//   store: {
-//     get: (arg0: string) => any;
-//     set: (arg0: string, arg1: any) => void;
-//     del: (arg0: string) => any;
-//   }
-// ) => {
-//   const clientIp = proxyAddr(req, (proxy: any): any => proxy);
-//   const roomAccessFromInput = getToken(req);
-//   const roomAccessFromSession = await store.get(clientIp);
-//   let socket;
-//   const access = roomAccessFromSession || roomAccessFromInput;
-//   if (!access) {
-//     res.sendFile("index.html", { root: "src/" + "public" }, (err) => {
-//       if (err) {
-//         res.end(500);
-//       }
-//       next();
-//     });
-//   } else {
-//     const socketId = await store.get(access);
-//     socket = io.sockets.sockets.get(socketId);
-//     if (!roomAccessFromSession && socket) store.set(clientIp, access);
-//     if (!socket) {
-//       await store.del(access);
-//       await store.del(clientIp);
-//       res
-//         .status(404)
-//         .send("No socket connection found for the given room access key");
-//       return;
-//     }
-//     res.locals.socket = socket;
-//     next();
-//   }
-// };

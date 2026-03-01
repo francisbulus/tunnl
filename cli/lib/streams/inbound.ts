@@ -18,8 +18,8 @@ export default class Inbound extends Readable {
     const handlePipeError: StreamHandler = (id, err) => {
       if (this.id === id) {
         this.socket.off("inbound-pipe", handlePipe);
-        this.socket.off("inbound-pipes", handlePipe);
-        this.socket.off("inbound-error", handlePipeError);
+        this.socket.off("inbound-pipes", handlePipes);
+        this.socket.off("inbound-pipe-error", handlePipeError);
         this.socket.off("inbound-pipe-end", handlePipeEnd);
         this.destroy(new Error(err));
       }
@@ -28,8 +28,8 @@ export default class Inbound extends Readable {
     const handlePipeEnd: StreamHandler = (id, data) => {
       if (this.id === id) {
         this.socket.off("inbound-pipe", handlePipe);
-        this.socket.off("inbound-pipes", handlePipe);
-        this.socket.off("inbound-error", handlePipeError);
+        this.socket.off("inbound-pipes", handlePipes);
+        this.socket.off("inbound-pipe-error", handlePipeError);
         this.socket.off("inbound-pipe-end", handlePipeEnd);
       }
       if (data) {
@@ -41,7 +41,7 @@ export default class Inbound extends Readable {
 
     this.socket.on("inbound-pipe", handlePipe);
     this.socket.on("inbound-pipes", handlePipes);
-    this.socket.on("inbound-error", handlePipeError);
+    this.socket.on("inbound-pipe-error", handlePipeError);
     this.socket.on("inbound-pipe-end", handlePipeEnd);
   }
   _read() {}

@@ -9,6 +9,7 @@ export interface StreamHandler {
 
 export type StreamCallback = (error?: Error) => void;
 
-export type ComputedArguments = {
-  [argument: string]: string | boolean | number;
-};
+export interface ComputedArguments {
+  port: number | false;
+  remote?: string;
+}

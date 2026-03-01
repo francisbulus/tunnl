@@ -32,7 +32,7 @@
 
     async function connect(e) {
       const key = document.getElementById("connect-key").value;
-      await fetch("https://node-tunnel.herokuapp.com/", {
+      await fetch("/", {
         mode: "cors",
         headers: new Headers({
           Authorization: "Bearer " + key,
