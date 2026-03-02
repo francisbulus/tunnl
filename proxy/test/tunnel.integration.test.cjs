@@ -148,11 +148,15 @@ const createTunnelClient = async (baseUrl, tunnelKey, options = {}) => {
           "content-type": "text/plain",
         },
       });
-      socket.emit(
-        "outbound-pipe",
-        id,
-        Buffer.from(`${req.method}:${req.path}:${requestBody}`)
-      );
+      const responsePayload = Buffer.from(`${req.method}:${req.path}:${requestBody}`);
+      if (options.useWritevResponse) {
+        socket.emit("outbound-pipes", id, [
+          { chunk: responsePayload.subarray(0, Math.ceil(responsePayload.length / 2)) },
+          { chunk: responsePayload.subarray(Math.ceil(responsePayload.length / 2)) },
+        ]);
+      } else {
+        socket.emit("outbound-pipe", id, responsePayload);
+      }
       socket.emit("outbound-pipe-end", id);
 
       if (options.disconnectAfterResponse) {
@@ -217,6 +221,23 @@ test("proxy tunnel hardening integration", async (t) => {
     assert.equal(await response.text(), `POST:/submit:${payload}`);
     assert.equal(tunnel.receivedRequests.length, 1);
     assert.equal(tunnel.receivedRequests[0].body, payload);
+  });
+
+  await t.test("handles writev-style outbound chunks", async (t) => {
+    const tunnel = await createTunnelClient(baseUrl, "WRTV1", {
+      useWritevResponse: true,
+    });
+    t.after(tunnel.close);
+
+    const response = await fetch(`${baseUrl}/writev`, {
+      method: "GET",
+      headers: {
+        Authorization: "Bearer WRTV1",
+      },
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(await response.text(), "GET:/writev:");
   });
 
   await t.test(

@@ -1,5 +1,31 @@
 import { Duplex } from "stream";
 import { Socket } from "../utils/types";
+
+const normalizeChunk = (chunk: any): Buffer | string => {
+  if (Buffer.isBuffer(chunk) || typeof chunk === "string") {
+    return chunk;
+  }
+
+  if (chunk && typeof chunk === "object" && "chunk" in chunk) {
+    return normalizeChunk(chunk.chunk);
+  }
+
+  if (
+    chunk &&
+    typeof chunk === "object" &&
+    chunk.type === "Buffer" &&
+    Array.isArray(chunk.data)
+  ) {
+    return Buffer.from(chunk.data);
+  }
+
+  if (chunk instanceof Uint8Array) {
+    return Buffer.from(chunk);
+  }
+
+  return Buffer.from(String(chunk));
+};
+
 export default class Outbound extends Duplex {
   constructor(private id: string, private socket: Socket) {
     super();
@@ -7,19 +33,19 @@ export default class Outbound extends Duplex {
     this.id = id;
     const handlePipe = (id: string, data: any) => {
       if (this.id === id) {
-        this.push(data);
+        this.push(normalizeChunk(data));
       }
     };
     const handlePipes = (id: string, data: any[]) => {
       if (this.id === id) {
         data.forEach((chunk: any) => {
-          this.push(chunk);
+          this.push(normalizeChunk(chunk));
         });
       }
     };
     const handleStreamClose = (id: string, data: any) => {
       if (this.id !== id) return;
-      if (data) this.push(data);
+      if (data) this.push(normalizeChunk(data));
       this.socket.off("outbound-pipe", handlePipe);
       this.socket.off("outbound-pipes", handlePipes);
       this.socket.off("outbound-pipe-error", handleStreamError);
