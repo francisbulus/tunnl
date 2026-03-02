@@ -16,10 +16,11 @@ export const handleSocketError = (res: Res, _socket: Socket): void => {
   if (res.writableEnded || res.destroyed) {
     return;
   }
-  if (!res.headersSent) {
-    res.status(502);
+  if (res.headersSent) {
+    res.destroy(new Error("Tunnel socket error"));
+    return;
   }
-  res.end("Tunnel socket error");
+  res.status(502).end("Tunnel socket error");
 };
 
 export const handleRequestError = (
@@ -29,8 +30,12 @@ export const handleRequestError = (
 ): void => {
   outbound.off("response", handleResponse);
   outbound.destroy();
-  if (!res.headersSent) {
-    res.status(502);
+  if (res.writableEnded || res.destroyed) {
+    return;
   }
-  res.end(errorMessage || "Upstream request failed");
+  if (res.headersSent) {
+    res.destroy(new Error(errorMessage || "Upstream request failed"));
+    return;
+  }
+  res.status(502).end(errorMessage || "Upstream request failed");
 };

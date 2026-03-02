@@ -158,7 +158,7 @@ const createTunnelClient = async (baseUrl, tunnelKey, options = {}) => {
       if (options.disconnectAfterResponse) {
         setTimeout(() => {
           socket.disconnect();
-        }, 0);
+        }, options.disconnectDelayMs || 25);
       }
     };
 
@@ -224,6 +224,7 @@ test("proxy tunnel hardening integration", async (t) => {
     async (t) => {
       const tunnel = await createTunnelClient(baseUrl, "DISC2", {
         disconnectAfterResponse: true,
+        disconnectDelayMs: 25,
       });
       t.after(tunnel.close);
 
