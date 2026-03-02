@@ -13,6 +13,9 @@ export const handleBadRequestToSocket = (
 };
 
 export const handleSocketError = (res: Res, _socket: Socket): void => {
+  if (res.writableEnded || res.destroyed) {
+    return;
+  }
   if (!res.headersSent) {
     res.status(502);
   }

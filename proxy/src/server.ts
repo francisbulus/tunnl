@@ -230,6 +230,14 @@ app.use(
       handleSocketError(res, socket);
     };
 
+    const cleanupRequestListeners = () => {
+      clearResponseTimeout();
+      req.off("data", onData);
+      socket.off("disconnect", handleSocketErrorWrapper);
+      socket.off("close", handleSocketErrorWrapper);
+      outbound.off("error", handleSocketErrorWrapper);
+    };
+
     outbound.once("proxy-request-error", function (errorMessage?: string) {
       clearResponseTimeout();
       handleRequestError(res, outbound, errorMessage);
@@ -241,13 +249,11 @@ app.use(
     outbound.once("error", handleSocketErrorWrapper);
 
     outbound.pipe(res);
+    res.once("finish", cleanupRequestListeners);
     res.once("close", () => {
-      clearResponseTimeout();
-      req.off("data", onData);
-      socket.off("close", handleSocketErrorWrapper);
-      outbound.off("error", handleSocketErrorWrapper);
+      cleanupRequestListeners();
     });
-    socket.once("close", handleSocketErrorWrapper);
+    socket.once("disconnect", handleSocketErrorWrapper);
   }
 );
 

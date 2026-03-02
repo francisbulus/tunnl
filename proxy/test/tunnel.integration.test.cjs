@@ -81,7 +81,7 @@ const startServer = async () => {
   };
 };
 
-const createTunnelClient = async (baseUrl, tunnelKey) => {
+const createTunnelClient = async (baseUrl, tunnelKey, options = {}) => {
   const socket = createSocketClient(baseUrl, {
     transports: ["websocket"],
     forceNew: true,
@@ -154,6 +154,12 @@ const createTunnelClient = async (baseUrl, tunnelKey) => {
         Buffer.from(`${req.method}:${req.path}:${requestBody}`)
       );
       socket.emit("outbound-pipe-end", id);
+
+      if (options.disconnectAfterResponse) {
+        setTimeout(() => {
+          socket.disconnect();
+        }, 0);
+      }
     };
 
     socket.on("inbound-pipe", onPipe);
@@ -212,6 +218,26 @@ test("proxy tunnel hardening integration", async (t) => {
     assert.equal(tunnel.receivedRequests.length, 1);
     assert.equal(tunnel.receivedRequests[0].body, payload);
   });
+
+  await t.test(
+    "does not append socket error text after successful response",
+    async (t) => {
+      const tunnel = await createTunnelClient(baseUrl, "DISC2", {
+        disconnectAfterResponse: true,
+      });
+      t.after(tunnel.close);
+
+      const response = await fetch(`${baseUrl}/stable`, {
+        method: "GET",
+        headers: {
+          Authorization: "Bearer DISC2",
+        },
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(await response.text(), "GET:/stable:");
+    }
+  );
 
   await t.test("returns 404 once tunnel disconnects", async (t) => {
     const tunnel = await createTunnelClient(baseUrl, "DISC1");
